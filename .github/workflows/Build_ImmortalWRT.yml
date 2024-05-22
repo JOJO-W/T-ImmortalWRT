@@ -79,7 +79,7 @@ jobs:
         run: |
           cd openwrt
           make defconfig
-          make -j$(nproc) || make -j1 V=s
+          make -j$(nproc) V=s || make -j1 V=s
         # 构建 OpenWrt 固件，如果并行构建失败，尝试单线程构建以获取更多日志信息
 
       - name: Upload firmware(上传编译好的固件到bin文件夹中)
