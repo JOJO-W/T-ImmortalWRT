@@ -19,11 +19,11 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.TOKEN }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout code 检查代码
         uses: actions/checkout@v2
         # 从 GitHub 仓库检出代码
 
-      - name: Cache OpenWrt build
+      - name: Cache OpenWrt build(缓存 OpenWrt 构建的中间结果)
         uses: actions/cache@v2
         with:
           path: |
@@ -36,42 +36,53 @@ jobs:
             ${{ runner.os }}-openwrt-
         # 缓存 OpenWrt 构建的中间结果，以加速后续的构建过程
 
-      - name: Expand disk space
+      - name: Create simulated physical disk(挂载虚拟物理磁盘)
         run: |
-          sudo fallocate -l 14G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-        # 扩充磁盘空间，增加 14GB 的交换空间
+         mnt_size=$(expr $(df -h /mnt | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 1)
+         root_size=$(expr $(df -h / | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 4)
+         sudo truncate -s "${mnt_size}"G /mnt/mnt.img
+         sudo truncate -s "${root_size}"G /root.img
+         sudo losetup /dev/loop6 /mnt/mnt.img
+         sudo losetup /dev/loop7 /root.img
+         sudo pvcreate /dev/loop6
+         sudo pvcreate /dev/loop7
+         sudo vgcreate github /dev/loop6 /dev/loop7
+         sudo lvcreate -n runner -l 100%FREE github
+         sudo mkfs.xfs /dev/github/runner
+         sudo mkdir -p /builder
+         sudo mount /dev/github/runner /builder
+         sudo chown -R runner:runner /builder
+         df -Th
+        # 挂载虚拟物理磁盘
 
-      - name: Set up environment
+      - name: Set up environment(配置环境)
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev zlib1g-dev gawk git ccache gettext libssl-dev xsltproc wget unzip python3
         # 安装必要的构建依赖项
 
-      - name: Clone ImmortalWrt
+      - name: Clone ImmortalWrt(克隆ImmrotalWrt源码并更名为openwrt)
         run: |
           git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
           cd openwrt
           cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
         # 克隆 ImmortalWrt 仓库，并复制配置文件
 
-      - name: Update and install feeds
+      - name: Update and install feeds(更新并安装feeds源)
         run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
         # 更新并安装 OpenWrt 的 feeds
 
-      - name: Build OpenWrt
+      - name: Build OpenWrt(编译固件)
         run: |
           cd openwrt
           make defconfig
           make -j$(nproc) || make -j1 V=s
         # 构建 OpenWrt 固件，如果并行构建失败，尝试单线程构建以获取更多日志信息
 
-      - name: Upload firmware
+      - name: Upload firmware(上传编译好的固件到bin文件夹中)
         uses: actions/upload-artifact@v2
         with:
           name: OpenWrt-firmware
