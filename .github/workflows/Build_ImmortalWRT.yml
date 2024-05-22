@@ -1,84 +1,82 @@
 name: Build and Release OpenWrt
 
-#配置触发器为手动触发actions
+# 配置触发器为手动触发 actions
 on:
+  workflow_dispatch:
 
-        workflow_dispatch:
-        
-#定义全局环境变量
+# 定义全局环境变量
 env:
-        REPO_URL: https://github.com/immortalwrt/immortalwrt.git
-        REPO_BRANCH: openwrt-23.05
-        CONFIG_FILE: .config
-        UPLOAD_BIN_DIR: true
-        UPLOAD_FIRMWARE: true
-        UPLOAD_RELEASE: true
-        TZ: Asia/Shanghai
-        GITHUB_TOKEN: ${{ secrets.TOKEN }}
+  REPO_URL: https://github.com/immortalwrt/immortalwrt.git
+  REPO_BRANCH: openwrt-23.05
+  CONFIG_FILE: .config
+  UPLOAD_BIN_DIR: true
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+  GITHUB_TOKEN: ${{ secrets.TOKEN }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
-
-   
 
     steps:
       - name: Checkout code 检查代码
         uses: actions/checkout@v2
         # 从 GitHub 仓库检出代码
 
-      - name: Cache OpenWrt build(缓存 OpenWrt 构建的中间结果)
-        uses: actions/cache@v2
+      - name: Cache OpenWrt build (缓存 OpenWrt 构建的中间结果)
+        uses: actions/cache@v3
         with:
           path: |
             openwrt/bin
             openwrt/build_dir
             openwrt/staging_dir
             openwrt/tmp
-          key: ${{ runner.os }}-openwrt-${{ github.sha }}
+          key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/.config') }}-${{ hashFiles('openwrt/feeds.conf.default') }}
           restore-keys: |
             ${{ runner.os }}-openwrt-
         # 缓存 OpenWrt 构建的中间结果，以加速后续的构建过程
 
-      - name: Create simulated physical disk(挂载虚拟物理磁盘)
+      - name: Create simulated physical disk (挂载虚拟物理磁盘)
         run: |
-         mnt_size=$(expr $(df -h /mnt | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 1)
-         root_size=$(expr $(df -h / | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 4)
-         sudo truncate -s "${mnt_size}"G /mnt/mnt.img
-         sudo truncate -s "${root_size}"G /root.img
-         sudo losetup /dev/loop6 /mnt/mnt.img
-         sudo losetup /dev/loop7 /root.img
-         sudo pvcreate /dev/loop6
-         sudo pvcreate /dev/loop7
-         sudo vgcreate github /dev/loop6 /dev/loop7
-         sudo lvcreate -n runner -l 100%FREE github
-         sudo mkfs.xfs /dev/github/runner
-         sudo mkdir -p /builder
-         sudo mount /dev/github/runner /builder
-         sudo chown -R runner:runner /builder
-         df -Th
+          mnt_size=$(expr $(df -h /mnt | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 1)
+          root_size=$(expr $(df -h / | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 4)
+          sudo truncate -s "${mnt_size}G" /mnt/mnt.img
+          sudo truncate -s "${root_size}G" /root.img
+          sudo losetup /dev/loop6 /mnt/mnt.img
+          sudo losetup /dev/loop7 /root.img
+          sudo pvcreate /dev/loop6
+          sudo pvcreate /dev/loop7
+          sudo vgcreate github /dev/loop6 /dev/loop7
+          sudo lvcreate -n runner -l 100%FREE github
+          sudo mkfs.xfs /dev/github/runner
+          sudo mkdir -p /builder
+          sudo mount /dev/github/runner /builder
+          sudo chown -R runner:runner /builder
+          df -Th
         # 挂载虚拟物理磁盘
 
-      - name: Set up environment(配置环境)
+      - name: Set up environment (配置环境)
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev zlib1g-dev gawk git ccache gettext libssl-dev xsltproc wget unzip python3
         # 安装必要的构建依赖项
 
-      - name: Clone ImmortalWrt(克隆ImmrotalWrt源码并更名为openwrt)
+      - name: Clone ImmortalWrt (克隆 ImmortalWrt 源码并更名为 openwrt)
         run: |
           git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
           cd openwrt
           cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
         # 克隆 ImmortalWrt 仓库，并复制配置文件
 
-      - name: Update and install feeds(更新并安装feeds源)
+      - name: Update and install feeds (更新并安装 feeds 源)
         run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
         # 更新并安装 OpenWrt 的 feeds
 
-      - name: Build OpenWrt(编译固件)
+      - name: Build OpenWrt (编译固件)
         id: compile
         run: |
           cd openwrt
@@ -90,12 +88,13 @@ jobs:
           echo "status=success" >> ${GITHUB_OUTPUT}
         # 构建 OpenWrt 固件，如果并行构建失败，尝试单线程构建以获取更多日志信息
 
-      - name: Upload firmware(上传编译好的固件到bin文件夹中)
+      - name: Upload firmware (上传编译好的固件到 bin 文件夹中)
         uses: actions/upload-artifact@v2
         with:
           name: OpenWrt-firmware
           path: openwrt/bin
         # 使用 actions/upload-artifact@v2 上传构建好的固件作为工作流的工件
+
       - name: 生成发布标签
         id: tag
         if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
@@ -116,7 +115,6 @@ jobs:
           👤 用户名: root
 
           🔒 密码: 空 
-        
           " >> release.txt
           echo "status=success" >> ${GITHUB_OUTPUT}
 
@@ -126,10 +124,10 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           body_path: release.txt
-          files: ${{ env.FIRMWARE }}/*
+          files: openwrt/bin/targets/*
 
-#    - name: TG推送
-#      run: curl "https://api2.pushdeer.com/message/push?pushkey=${{ secrets.PUSHDEER_TOKEN }}&text=【Github Actions】AutoBuild-immortalwrt-x86 打包成功"
+      # - name: TG 推送
+      #   run: curl "https://api2.pushdeer.com/message/push?pushkey=${{ secrets.PUSHDEER_TOKEN }}&text=【Github Actions】AutoBuild-immortalwrt-x86 打包成功"
 
       - name: 删除运行记录
         uses: Mattraks/delete-workflow-runs@main
