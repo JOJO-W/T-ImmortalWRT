@@ -1,0 +1,91 @@
+name: Build and Release OpenWrt
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      REPO_URL: https://github.com/JOJO-W/immortalwrt.git
+      REPO_BRANCH: main
+      CONFIG_FILE: .config
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        # 从 GitHub 仓库检出代码
+
+      - name: Cache OpenWrt build
+        uses: actions/cache@v2
+        with:
+          path: |
+            openwrt/bin
+            openwrt/build_dir
+            openwrt/staging_dir
+            openwrt/tmp
+          key: ${{ runner.os }}-openwrt-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-
+        # 缓存 OpenWrt 构建的中间结果，以加速后续的构建过程
+
+      - name: Expand disk space
+        run: |
+          sudo fallocate -l 14G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+        # 扩充磁盘空间，增加 14GB 的交换空间
+
+      - name: Set up environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev zlib1g-dev gawk git ccache gettext libssl-dev xsltproc wget unzip python3
+        # 安装必要的构建依赖项
+
+      - name: Clone ImmortalWrt
+        run: |
+          git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
+          cd openwrt
+          cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
+        # 克隆 ImmortalWrt 仓库，并复制配置文件
+
+      - name: Update and install feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+        # 更新并安装 OpenWrt 的 feeds
+
+      - name: Build OpenWrt
+        run: |
+          cd openwrt
+          make defconfig
+          make -j$(nproc) || make -j1 V=s
+        # 构建 OpenWrt 固件，如果并行构建失败，尝试单线程构建以获取更多日志信息
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v2
+        with:
+          name: OpenWrt-firmware
+          path: openwrt/bin
+        # 使用 actions/upload-artifact@v2 上传构建好的固件作为工作流的工件
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        if: github.event_name == 'push'
+        with:
+          files: openwrt/bin/**/*
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: |
+            This is an automated release by GitHub Actions.
+          draft: false
+          prerelease: false
+        # 使用 softprops/action-gh-release@v1 创建 GitHub 发布版本，包含上传的固件文件
