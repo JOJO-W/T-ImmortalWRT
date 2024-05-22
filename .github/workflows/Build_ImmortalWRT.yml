@@ -88,13 +88,26 @@ jobs:
           echo "status=success" >> ${GITHUB_OUTPUT}
         # 构建 OpenWrt 固件，如果并行构建失败，尝试单线程构建以获取更多日志信息
 
-      - name: Upload firmware (上传编译好的固件到 bin 文件夹中)
-        uses: actions/upload-artifact@v2
-        with:
-          name: OpenWrt-firmware
-          path: openwrt/bin
-        # 使用 actions/upload-artifact@v2 上传构建好的固件作为工作流的工件
+      - name: 检查磁盘空间
+        if: (!cancelled())
+        run: df -hT
 
+      - name: 上传 bin 文件夹
+        uses: actions/upload-artifact@main
+        if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+        with:
+          name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+          path: openwrt/bin
+          
+      - name: 整理固件文件
+        id: organize
+        if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+        run: |
+          cd openwrt/bin/targets/*/*
+          rm -rf packages
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "status=success" >> ${GITHUB_OUTPUT}
+          
       - name: 生成发布标签
         id: tag
         if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
