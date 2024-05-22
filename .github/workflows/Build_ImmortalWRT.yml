@@ -112,7 +112,7 @@ jobs:
           " >> release.txt
           echo "status=success" >> ${GITHUB_OUTPUT}
 
-      - name: Create release
+      - name: Create release(创建发布版本)
         uses: softprops/action-gh-release@v1
         if: github.event_name == 'push'
         with:
