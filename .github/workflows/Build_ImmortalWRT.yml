@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-        REPO_URL: https://github.com/immortalwrt/immortalwrt
+        REPO_URL: https://github.com/immortalwrt/immortalwrt.git
         REPO_BRANCH: openwrt-23.05
         CONFIG_FILE: .config
         UPLOAD_BIN_DIR: true
