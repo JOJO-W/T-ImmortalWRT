@@ -12,10 +12,16 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     env:
-      REPO_URL: https://github.com/immortalwrt/immortalwrt
-      REPO_BRANCH: main
-      CONFIG_FILE: .config
+        REPO_URL: https://github.com/immortalwrt/immortalwrt
+        REPO_BRANCH: openwrt-23.05
+        CONFIG_FILE: .config
+        UPLOAD_BIN_DIR: true
+        UPLOAD_FIRMWARE: true
+        UPLOAD_RELEASE: true
+        TZ: Asia/Shanghai
+        GITHUB_TOKEN: ${{ secrets.TOKEN }}
 
     steps:
       - name: Checkout code
@@ -76,6 +82,29 @@ jobs:
           name: OpenWrt-firmware
           path: openwrt/bin
         # 使用 actions/upload-artifact@v2 上传构建好的固件作为工作流的工件
+      - name: 生成发布标签
+        id: tag
+        if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
+        run: |
+          echo "release_tag=$(date +"%Y.%m.%d-%H.%M")" >> ${GITHUB_OUTPUT}
+          touch release.txt
+          echo "
+          💻 架构: x86-64
+
+          📂 源码: ${{ env.REPO_URL }}
+
+          🌳 分支: ${{ env.REPO_BRANCH }}
+
+          ⏱️ 编译时间: $(date +"%Y年%m月%d日%H时%M分")
+
+          🌐 管理地址: 犹未可知 , 子网掩码: 255.255.252.0
+
+          👤 用户名: root
+
+          🔒 密码: 空 
+        
+          " >> release.txt
+          echo "status=success" >> ${GITHUB_OUTPUT}
 
       - name: Create release
         uses: softprops/action-gh-release@v1
