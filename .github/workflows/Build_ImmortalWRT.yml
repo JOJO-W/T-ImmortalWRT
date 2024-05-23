@@ -41,7 +41,7 @@ jobs:
             openwrt/build_dir
             openwrt/staging_dir
             openwrt/tmp
-          key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/.config') }}
+          key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/.config') }}-${{ hashFiles('openwrt/feeds.conf.default') }}
           restore-keys: |
             ${{ runner.os }}-openwrt-
             
