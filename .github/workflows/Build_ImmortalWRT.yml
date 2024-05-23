@@ -23,18 +23,7 @@ jobs:
         uses: actions/checkout@v2
         # 从 GitHub 仓库检出代码
 
-      - name: Cache OpenWrt build
-        uses: actions/cache@v2
-        with:
-          path: |
-            openwrt/bin
-            openwrt/build_dir
-            openwrt/staging_dir
-            openwrt/tmp
-          key: ${{ runner.os }}-openwrt-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-openwrt-
-        # 缓存 OpenWrt 构建的中间结果，以加速后续的构建过程
+
 
       - name: Expand disk space
         run: |
