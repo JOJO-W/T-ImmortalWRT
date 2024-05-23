@@ -1,94 +1,70 @@
 name: Build and Release OpenWrt
 
-# 配置触发器为手动触发 actions
 on:
-  workflow_dispatch:
 
-# 定义全局环境变量
-env:
-  REPO_URL: https://github.com/immortalwrt/immortalwrt.git
-  REPO_BRANCH: openwrt-23.05
-  CONFIG_FILE: .config
-  UPLOAD_BIN_DIR: true
-  UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
-  TZ: Asia/Shanghai
-  GITHUB_TOKEN: ${{ secrets.TOKEN }}
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+        REPO_URL: https://github.com/immortalwrt/immortalwrt.git
+        REPO_BRANCH: openwrt-23.05
+        CONFIG_FILE: .config
+        UPLOAD_BIN_DIR: true
+        UPLOAD_FIRMWARE: true
+        UPLOAD_RELEASE: true
+        TZ: Asia/Shanghai
+        GITHUB_TOKEN: ${{ secrets.TOKEN }}
+
     steps:
-      - name: Checkout code 检查代码
+      - name: Checkout code
         uses: actions/checkout@v2
         # 从 GitHub 仓库检出代码
 
-      - name: Cache OpenWrt build (缓存 OpenWrt 构建的中间结果)
-        uses: actions/cache@v3
+      - name: Cache OpenWrt build
+        uses: actions/cache@v2
         with:
           path: |
             openwrt/bin
             openwrt/build_dir
             openwrt/staging_dir
             openwrt/tmp
-          key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/.config') }}-${{ hashFiles('openwrt/feeds.conf.default') }}
+          key: ${{ runner.os }}-openwrt-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-openwrt-
         # 缓存 OpenWrt 构建的中间结果，以加速后续的构建过程
 
-      - name: Create simulated physical disk (挂载虚拟物理磁盘)
+      - name: Expand disk space
         run: |
-          mnt_size=$(expr $(df -h /mnt | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 1)
-          root_size=$(expr $(df -h / | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 4)
-          sudo truncate -s "${mnt_size}G" /mnt/mnt.img
-          sudo truncate -s "${root_size}G" /root.img
-          sudo losetup /dev/loop6 /mnt/mnt.img
-          sudo losetup /dev/loop7 /root.img
-          sudo pvcreate /dev/loop6
-          sudo pvcreate /dev/loop7
-          sudo vgcreate github /dev/loop6 /dev/loop7
-          sudo lvcreate -n runner -l 100%FREE github
-          sudo mkfs.xfs /dev/github/runner
-          sudo mkdir -p /builder
-          sudo mount /dev/github/runner /builder
-          sudo chown -R runner:runner /builder
-          df -Th
-        # 挂载虚拟物理磁盘
+          sudo fallocate -l 14G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+        # 扩充磁盘空间，增加 14GB 的交换空间
 
+      - name: Set up environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev zlib1g-dev gawk git ccache gettext libssl-dev xsltproc wget unzip python3
         # 安装必要的构建依赖项
-      - name: 安装 Go 1.21.1
-        uses: actions/setup-go@v3
-        with:
-          go-version: 'stable'
 
-      - name: 初始化编译环境
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force
-          sudo -E apt-get -qq update
-          sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev rename
-          sudo -E apt-get -qq autoremove --purge
-          sudo -E apt-get -qq clean
-          sudo timedatectl set-timezone "$TZ"
-          
-      - name: Clone ImmortalWrt (克隆 ImmortalWrt 源码并更名为 openwrt)
+      - name: Clone ImmortalWrt
         run: |
           git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
           cd openwrt
           cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
         # 克隆 ImmortalWrt 仓库，并复制配置文件
 
-      - name: Update and install feeds (更新并安装 feeds 源)
+      - name: Update and install feeds(更新并安装新的源索引)
         run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
         # 更新并安装 OpenWrt 的 feeds
         
-      - name: 下载软件包
+      - name: 下载软件包(根据feeds源下载固件所需的源代码)
         id: package
         run: |
           cd openwrt
@@ -97,29 +73,26 @@ jobs:
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
           
-      - name: Build OpenWrt (编译固件)
+      - name: Build OpenWrt(编译固件)
         id: compile
         run: |
           cd openwrt
           echo -e "$(nproc) thread compile"
-          make -j1 V=s || make -j1 || make -j1 V=s
+          make defconfig
+          make -j$(nproc) || make -j1 V=s
           echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
           grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
           [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
           echo "status=success" >> ${GITHUB_OUTPUT}
         # 构建 OpenWrt 固件，如果并行构建失败，尝试单线程构建以获取更多日志信息
 
-      - name: 检查磁盘空间
-        if: (!cancelled())
-        run: df -hT
-
-      - name: 上传 bin 文件夹
-        uses: actions/upload-artifact@main
-        if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      - name: Upload firmware
+        uses: actions/upload-artifact@v2
         with:
-          name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+          name: OpenWrt-firmware
           path: openwrt/bin
-          
+        # 使用 actions/upload-artifact@v2 上传构建好的固件作为工作流的工件
+            
       - name: 整理固件文件
         id: organize
         if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
@@ -149,30 +122,19 @@ jobs:
           👤 用户名: root
 
           🔒 密码: 空 
+        
           " >> release.txt
           echo "status=success" >> ${GITHUB_OUTPUT}
 
-      - name: 自动发布固件到 Releases
-        uses: softprops/action-gh-release@master
-        if: steps.tag.outputs.status == 'success' && !cancelled()
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        if: github.event_name == 'push'
         with:
-          tag_name: ${{ steps.tag.outputs.release_tag }}
-          body_path: release.txt
-          files: openwrt/bin/targets/*
-
-      # - name: TG 推送
-      #   run: curl "https://api2.pushdeer.com/message/push?pushkey=${{ secrets.PUSHDEER_TOKEN }}&text=【Github Actions】AutoBuild-immortalwrt-x86 打包成功"
-
-      - name: 删除运行记录
-        uses: Mattraks/delete-workflow-runs@main
-        with:
-          retain_days: 1
-          keep_minimum_runs: 1
-          token: ${{ env.GITHUB_TOKEN }}
-
-      - name: 删除自动发布的旧固件
-        uses: dev-drprasad/delete-older-releases@master
-        if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-        with:
-          keep_latest: 1
-          delete_tags: true
+          files: openwrt/bin/**/*
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: |
+            This is an automated release by GitHub Actions.
+          draft: false
+          prerelease: false
+        # 使用 softprops/action-gh-release@v1 创建 GitHub 发布版本，包含上传的固件文件
