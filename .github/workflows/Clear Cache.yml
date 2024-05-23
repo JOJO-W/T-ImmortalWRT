@@ -1,0 +1,19 @@
+name: Clear Cache
+
+on:
+  workflow_dispatch:
+
+jobs:
+  clear-cache:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clear OpenWrt cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            openwrt/bin
+            openwrt/build_dir
+            openwrt/staging_dir
+            openwrt/tmp
+          key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/.config') }}-${{ hashFiles('openwrt/feeds.conf.default') }}
+          action: delete
