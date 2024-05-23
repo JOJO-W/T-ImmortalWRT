@@ -45,19 +45,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-openwrt-
             
-      - name: Restore cache for OpenWrt build(还原缓存文件)
-        id: restore-cache-openwrt
-        uses: actions/cache@v3
-        with:
-          path: |
-            openwrt/bin
-            openwrt/build_dir
-            openwrt/staging_dir
-            openwrt/tmp
-          key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/.config') }}
-          restore-keys: |
-            ${{ runner.os }}-openwrt-
-            
       - name: Set up environment
         run: |
           sudo apt-get update
