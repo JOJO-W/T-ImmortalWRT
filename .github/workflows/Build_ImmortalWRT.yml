@@ -33,7 +33,19 @@ jobs:
           sudo swapon /swapfile
         # 扩充磁盘空间，增加 14GB 的交换空间
         
-      - name: Restore cache for OpenWrt build(构建缓存)
+      - name: Cache OpenWrt build (缓存 OpenWrt 构建文件)
+        uses: actions/cache@v2
+        with:
+          path: |
+            openwrt/bin
+            openwrt/build_dir
+            openwrt/staging_dir
+            openwrt/tmp
+          key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/.config') }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-
+            
+      - name: Restore cache for OpenWrt build(还原缓存文件)
         id: restore-cache-openwrt
         uses: actions/cache@v3
         with:
@@ -42,7 +54,7 @@ jobs:
             openwrt/build_dir
             openwrt/staging_dir
             openwrt/tmp
-          key: ${{ runner.os }}-openwrt-${{ hashFiles('**/openwrt/.config') }}-${{ hashFiles('**/openwrt/feeds.conf.default') }}
+          key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/.config') }}
           restore-keys: |
             ${{ runner.os }}-openwrt-
             
