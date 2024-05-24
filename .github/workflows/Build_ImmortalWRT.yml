@@ -1,29 +1,24 @@
 name: Build and Release OpenWrt
 
 on:
-
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
 
     env:
-        REPO_URL: https://github.com/immortalwrt/immortalwrt.git
-        REPO_BRANCH: openwrt-23.05
-        CONFIG_FILE: .config
-        UPLOAD_BIN_DIR: true
-        UPLOAD_FIRMWARE: true
-        UPLOAD_RELEASE: true
-        TZ: Asia/Shanghai
-        GITHUB_TOKEN: ${{ secrets.TOKEN }}
+      REPO_URL: https://github.com/immortalwrt/immortalwrt.git
+      REPO_BRANCH: openwrt-23.05
+      CONFIG_FILE: .config
+      UPLOAD_BIN_DIR: true
+      UPLOAD_FIRMWARE: true
+      UPLOAD_RELEASE: true
+      TZ: Asia/Shanghai
+      GITHUB_TOKEN: ${{ secrets.TOKEN }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-        # 从 GitHub 仓库检出代码
-
-
 
       - name: Expand disk space
         run: |
@@ -31,22 +26,18 @@ jobs:
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
-        # 扩充磁盘空间，增加 14GB 的交换空间
-        
-            
+
       - name: Set up environment
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev zlib1g-dev gawk git ccache gettext libssl-dev xsltproc wget unzip python3
-        # 安装必要的构建依赖项
 
       - name: Clone ImmortalWrt
         run: |
           git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
           cd openwrt
           cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
-        # 克隆 ImmortalWrt 仓库，并复制配置文件
-        
+
       - name: Cache OpenWrt build (缓存 OpenWrt 构建文件)
         uses: actions/cache@v2
         with:
@@ -55,18 +46,16 @@ jobs:
             openwrt/build_dir
             openwrt/staging_dir
             openwrt/tmp
-          key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/.config') }}-${{ hashFiles('openwrt/feeds.conf.default') }}
+          key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/.config') }}
           restore-keys: |
             ${{ runner.os }}-openwrt-
-            
-      - name: Update and install feeds(更新并安装新的源索引)
+
+      - name: Update and install feeds (更新并安装新的源索引)
         run: |
           cd openwrt
           ./scripts/feeds update -a
-          ./scripts/feeds install -a
-        # 更新并安装 OpenWrt 的 feeds
-        
-      - name: 下载软件包(根据feeds源下载固件所需的源代码)
+          ./scripts/feeds install -a    
+      - name: 下载软件包 (根据 feeds 源下载固件所需的源代码)
         id: package
         run: |
           cd openwrt
@@ -74,8 +63,8 @@ jobs:
           make download -j8
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
-          
-      - name: Verify cache restoration(验证缓存)
+
+      - name: Verify cache restoration (验证缓存)
         run: |
           cd openwrt
           if [ -d "build_dir" ] && [ -d "staging_dir" ]; then
@@ -83,28 +72,25 @@ jobs:
           else
             echo "Cache restoration failed."
           fi
-          
-      - name: Build OpenWrt(编译固件如果存在缓存则使用缓存)
-        id: compile
-        run: |
-          cd openwrt
-          echo -e "$(nproc) thread compile"
-          make defconfig
-          echo "No cache available, starting full build."
-          make -j1 V=s || make -j1 || make -j1 V=s
-          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-          grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-          [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
-          echo "status=success" >> ${GITHUB_OUTPUT}
-        # 构建 OpenWrt 固件，如果并行构建失败，尝试单线程构建以获取更多日志信息
+      - name: Build OpenWrt (编译固件如果存在缓存则使用缓存)
+          id: compile
+          run: |
+            cd openwrt
+            echo -e "$(nproc) thread compile"
+            make defconfig
+            echo "No cache available, starting full build."
+            make -j$(nproc) || make -j1 || make -j1 V=s
+            echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+            grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+            [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+            echo "status=success" >> ${GITHUB_OUTPUT}
 
       - name: Upload firmware
         uses: actions/upload-artifact@v2
         with:
           name: OpenWrt-firmware
           path: openwrt/bin
-        # 使用 actions/upload-artifact@v2 上传构建好的固件作为工作流的工件
-            
+
       - name: 整理固件文件
         id: organize
         if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
@@ -113,7 +99,7 @@ jobs:
           rm -rf packages
           echo "FIRMWARE=$PWD" >> $GITHUB_ENV
           echo "status=success" >> ${GITHUB_OUTPUT}
-          
+
       - name: 生成发布标签
         id: tag
         if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
@@ -133,8 +119,7 @@ jobs:
 
           👤 用户名: root
 
-          🔒 密码: 空 
-        
+          🔒 密码: 空
           " >> release.txt
           echo "status=success" >> ${GITHUB_OUTPUT}
 
@@ -142,10 +127,9 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: openwrt/bin/**/*
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          release_name: Release ${{ steps.tag.outputs.release_tag }}
           body: |
             This is an automated release by GitHub Actions.
           draft: false
           prerelease: false
-        # 使用 softprops/action-gh-release@v1 创建 GitHub 发布版本，包含上传的固件文件
