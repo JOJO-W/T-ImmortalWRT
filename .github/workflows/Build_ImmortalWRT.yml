@@ -72,6 +72,7 @@ jobs:
           else
             echo "Cache restoration failed."
           fi
+<<<<<<< HEAD
       - name: Build OpenWrt (编译固件如果存在缓存则使用缓存)
           id: compile
           run: |
@@ -84,6 +85,22 @@ jobs:
             grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
             [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
             echo "status=success" >> ${GITHUB_OUTPUT}
+=======
+          
+      - name: Build OpenWrt(编译固件如果存在缓存则使用缓存)
+        id: compile
+        run: |
+          cd openwrt
+          echo -e "$(nproc) thread compile"
+          make defconfig
+          echo "No cache available, starting full build."
+          make -j$(nproc) || make -j1 || make -j1 V=s
+          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+          grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+          [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+          echo "status=success" >> ${GITHUB_OUTPUT}
+        # 构建 OpenWrt 固件，如果并行构建失败，尝试单线程构建以获取更多日志信息
+>>>>>>> 30988acf6f7f85a9e4559d675063d083639b2eb0
 
       - name: Upload firmware
         uses: actions/upload-artifact@v2
