@@ -33,17 +33,6 @@ jobs:
           sudo swapon /swapfile
         # 扩充磁盘空间，增加 14GB 的交换空间
         
-      - name: Cache OpenWrt build (缓存 OpenWrt 构建文件)
-        uses: actions/cache@v2
-        with:
-          path: |
-            openwrt/bin
-            openwrt/build_dir
-            openwrt/staging_dir
-            openwrt/tmp
-          key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/.config') }}-${{ hashFiles('openwrt/feeds.conf.default') }}
-          restore-keys: |
-            ${{ runner.os }}-openwrt-
             
       - name: Set up environment
         run: |
@@ -57,7 +46,19 @@ jobs:
           cd openwrt
           cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
         # 克隆 ImmortalWrt 仓库，并复制配置文件
-
+        
+      - name: Cache OpenWrt build (缓存 OpenWrt 构建文件)
+        uses: actions/cache@v2
+        with:
+          path: |
+            openwrt/bin
+            openwrt/build_dir
+            openwrt/staging_dir
+            openwrt/tmp
+          key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/.config') }}-${{ hashFiles('openwrt/feeds.conf.default') }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-
+            
       - name: Update and install feeds(更新并安装新的源索引)
         run: |
           cd openwrt
