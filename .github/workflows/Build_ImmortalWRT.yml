@@ -72,21 +72,6 @@ jobs:
           else
             echo "Cache restoration failed."
           fi
-<<<<<<< HEAD
-      - name: Build OpenWrt (编译固件如果存在缓存则使用缓存)
-          id: compile
-          run: |
-            cd openwrt
-            echo -e "$(nproc) thread compile"
-            make defconfig
-            echo "No cache available, starting full build."
-            make -j$(nproc) || make -j1 || make -j1 V=s
-            echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-            grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-            [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
-            echo "status=success" >> ${GITHUB_OUTPUT}
-=======
-          
       - name: Build OpenWrt(编译固件如果存在缓存则使用缓存)
         id: compile
         run: |
@@ -99,13 +84,16 @@ jobs:
           grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
           [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
           echo "status=success" >> ${GITHUB_OUTPUT}
-        # 构建 OpenWrt 固件，如果并行构建失败，尝试单线程构建以获取更多日志信息
->>>>>>> 30988acf6f7f85a9e4559d675063d083639b2eb0
 
-      - name: Upload firmware
-        uses: actions/upload-artifact@v2
+      - name: 检查磁盘空间
+        if: (!cancelled())
+        run: df -hT
+
+      - name: 上传 bin 文件夹
+        uses: actions/upload-artifact@main
+        if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
         with:
-          name: OpenWrt-firmware
+          name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
           path: openwrt/bin
 
       - name: 整理固件文件
@@ -116,6 +104,13 @@ jobs:
           rm -rf packages
           echo "FIRMWARE=$PWD" >> $GITHUB_ENV
           echo "status=success" >> ${GITHUB_OUTPUT}
+
+      - name: 上传固件目录
+        uses: actions/upload-artifact@main
+        if: steps.organize.outputs.status == 'success' && !cancelled()
+        with:
+          name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+          path: ${{ env.FIRMWARE }}
 
       - name: 生成发布标签
         id: tag
@@ -132,21 +127,36 @@ jobs:
 
           ⏱️ 编译时间: $(date +"%Y年%m月%d日%H时%M分")
 
-          🌐 管理地址: 犹未可知 , 子网掩码: 255.255.252.0
+          🌐 管理地址: 10.0.0.1 , 子网掩码: 255.255.252.0
 
           👤 用户名: root
 
-          🔒 密码: 空
+          🔒 密码: 空 
+          
           " >> release.txt
           echo "status=success" >> ${GITHUB_OUTPUT}
 
-      - name: Create release
-        uses: softprops/action-gh-release@v1
+      - name: 自动发布固件到 Releases
+        uses: softprops/action-gh-release@master
+        if: steps.tag.outputs.status == 'success' && !cancelled()
         with:
-          files: openwrt/bin/**/*
           tag_name: ${{ steps.tag.outputs.release_tag }}
-          release_name: Release ${{ steps.tag.outputs.release_tag }}
-          body: |
-            This is an automated release by GitHub Actions.
-          draft: false
-          prerelease: false
+          body_path: release.txt
+          files: ${{ env.FIRMWARE }}/*
+
+  #    - name: TG推送
+  #      run: curl "https://api2.pushdeer.com/message/push?pushkey=${{ secrets.PUSHDEER_TOKEN }}&text=【Github Actions】AutoBuild-immortalwrt-x86 打包成功"
+
+      - name: 删除运行记录
+        uses: Mattraks/delete-workflow-runs@main
+        with:
+          retain_days: 1
+          keep_minimum_runs: 1
+          token: ${{ env.GITHUB_TOKEN }}
+
+      - name: 删除自动发布的旧固件
+        uses: dev-drprasad/delete-older-releases@master
+        if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+        with:
+          keep_latest: 1
+          delete_tags: true
